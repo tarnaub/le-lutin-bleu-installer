@@ -612,27 +612,34 @@ bilan T54 "jetons absents des sorties et journaux" "aucune occurrence" "${fuites
 # T55 : scripts/publier.sh sans réponse à sa confirmation (ni terminal, ni entrée standard) : message clair, rien de
 # publié. Il est joué sur une copie de ce dépôt sous tests/.essais/publier : ses tests y sont remplacés par un témoin qui
 # consigne T05 et T06 réussis, origin nomme le dépôt public mais pousse vers un dépôt local, et le faux gh ne connaît que
-# les lectures d'avant la confirmation. git y lit un HOME vide, sans la configuration du système.
+# les lectures d'avant la confirmation. git y lit un HOME vide, sans la configuration du système, et rien de
+# l'environnement de l'appelant (un GIT_DIR hérité le ferait écrire dans un autre dépôt) ; il ne remonte pas au-dessus
+# de tests/.essais/publier (un git init raté le ferait écrire dans ce dépôt-ci).
 PUB="$ESSAIS/publier"
 PUB_DEPOT="$PUB/depot"
 PUB_DISTANT="$PUB/distant.git"
 PUB_JOURNAL="$PUB/journal-faux-gh.log"
 git_essai() {
-  env HOME="$PUB/home" GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=essai GIT_AUTHOR_EMAIL=essai@tests \
-    GIT_COMMITTER_NAME=essai GIT_COMMITTER_EMAIL=essai@tests /usr/bin/git "$@"
+  env -i HOME="$PUB/home" PATH=/usr/bin:/bin GIT_CONFIG_NOSYSTEM=1 GIT_CEILING_DIRECTORIES="$PUB" \
+    GIT_AUTHOR_NAME=essai GIT_AUTHOR_EMAIL=essai@tests GIT_COMMITTER_NAME=essai GIT_COMMITTER_EMAIL=essai@tests \
+    /usr/bin/git "$@"
+}
+copie_isolee() {  # la copie d'essai a son propre .git
+  [ "$(git_essai -C "$PUB_DEPOT" rev-parse --absolute-git-dir 2>/dev/null)" = "$PUB_DEPOT/.git" ]
 }
 preparer_publier() {
-  mkdir -p "$PUB_DEPOT/scripts" "$PUB_DEPOT/tests" "$PUB/home"
-  cp "$AMORCE" "$RACINE/README.md" "$PUB_DEPOT/"
-  cp "$RACINE/scripts/publier.sh" "$PUB_DEPOT/scripts/"
+  mkdir -p "$PUB_DEPOT/scripts" "$PUB_DEPOT/tests" "$PUB/home" || return 1
+  cp "$AMORCE" "$RACINE/README.md" "$PUB_DEPOT/" || return 1
+  cp "$RACINE/scripts/publier.sh" "$PUB_DEPOT/scripts/" || return 1
   printf '%s\n' '#!/bin/bash' 'mkdir -p tests/.essais' \
     "printf '| T05 | - | - | réussi |\\n| T06 | - | - | réussi |\\n' > tests/.essais/resultats.md" > "$PUB_DEPOT/tests/lancer-tests.sh"
   printf '%s\n' 'tests/.essais/' '.build/' > "$PUB_DEPOT/.gitignore"
-  git_essai init -q --bare "$PUB_DISTANT"
-  git_essai init -q -b main "$PUB_DEPOT"
-  git_essai -C "$PUB_DEPOT" add -A
-  git_essai -C "$PUB_DEPOT" commit -q --no-gpg-sign -m "copie d'essai"
-  git_essai -C "$PUB_DEPOT" remote add origin "https://github.com/tarnaub/le-lutin-bleu-installer.git"
+  git_essai init -q --bare "$PUB_DISTANT" || return 1
+  git_essai init -q -b main "$PUB_DEPOT" || return 1
+  copie_isolee || { echo "la copie d'essai n'a pas son propre .git : préparation arrêtée"; return 1; }
+  git_essai -C "$PUB_DEPOT" add -A &&
+  git_essai -C "$PUB_DEPOT" commit -q --no-gpg-sign -m "copie d'essai" &&
+  git_essai -C "$PUB_DEPOT" remote add origin "https://github.com/tarnaub/le-lutin-bleu-installer.git" &&
   git_essai -C "$PUB_DEPOT" remote set-url --push origin "$PUB_DISTANT"
 }
 jouer_publier() {  # jouer_publier NOM ENTREE : sortie dans $SORTIES/NOM.txt, code dans STATUT
@@ -655,10 +662,13 @@ verifier_publier() {  # verifier_publier NUM NOM ENTREE MOTIF ATTENDU
   [ -z "$(git_essai -C "$PUB_DEPOT" tag)" ] || detail="$detail étiquette posée"
   bilan "$1" "$2" "$5" "$detail"
 }
-preparer_publier > "$SORTIES/publier-preparation.txt" 2>&1
-if [ ! -x "$FAUX_GH_PUBLIER" ] \
+PREPARATION=0
+preparer_publier > "$SORTIES/publier-preparation.txt" 2>&1 || PREPARATION=$?
+if [ "$PREPARATION" -ne 0 ] || [ ! -x "$FAUX_GH_PUBLIER" ] || ! copie_isolee \
     || [ "$(git_essai -C "$PUB_DEPOT" remote get-url --push origin 2>/dev/null)" != "$PUB_DISTANT" ]; then
   consigner T55 "publier.sh : confirmation sans réponse" "message clair, rien de publié" ECHEC \
+    "(copie d'essai non préparée : voir sorties/publier-preparation.txt)"
+  consigner T55b "publier-reponse-non" "« abandon demandé », rien de publié" ECHEC \
     "(copie d'essai non préparée : voir sorties/publier-preparation.txt)"
 else
   verifier_publier T55 publier-sans-reponse "" "confirmation impossible : aucune réponse" "message clair, rien de publié"
