@@ -167,8 +167,9 @@ avec votre informatique.
 ## Tests
 
 Les tests jouent l'amorce contre un faux GitHub local (127.0.0.1), avec des clés d'essai créées à chaque
-passage, un faux `gh`, un faux proxy et un installateur factice qui n'installe rien. Ils ne contactent jamais
-GitHub.
+passage, un faux `gh`, un faux proxy et un installateur factice qui n'installe rien. Ils jouent aussi
+`scripts/publier.sh` sur une copie de ce dépôt, avec un autre faux `gh`, jusqu'à sa confirmation (sans réponse, puis
+avec « n ») : rien n'est poussé ni publié. Ils ne contactent jamais GitHub.
 
 ```sh
 bash tests/lancer-tests.sh

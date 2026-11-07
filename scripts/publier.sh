@@ -120,7 +120,12 @@ brouillons="$("$GH" api "repos/$DEPOT_PUBLIC/releases?per_page=100" --jq ".[] | 
   || fail "GitHub injoignable (liste des releases)"
 [[ -z "$brouillons" ]] || fail "un brouillon de la release $tag existe déjà ($brouillons) : supprimez-le, puis relancez"
 
-read -r -p "Publier l'amorce $tag (version minimale $vmin) sur $DEPOT_PUBLIC ? [o/N] " reponse
+# sans terminal ni réponse, read reçoit une fin de fichier : set -e arrêterait le script sans rien dire
+reponse=""
+if ! read -r -p "Publier l'amorce $tag (version minimale $vmin) sur $DEPOT_PUBLIC ? [o/N] " reponse && [[ -z "$reponse" ]]; then
+  echo >&2
+  fail "confirmation impossible : aucune réponse (lancer dans un terminal, ou fournir la réponse sur l'entrée standard)"
+fi
 [[ "$reponse" == o || "$reponse" == oui ]] || fail "abandon demandé"
 
 # --- publication -----------------------------------------------------------------------------------------------------

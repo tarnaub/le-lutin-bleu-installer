@@ -28,6 +28,7 @@ JOURNAL_GH="$ESSAIS/journal-faux-gh.log"
 AMORCE="$RACINE/amorce-le-lutin-bleu.sh"
 AMORCE_ESSAI="$ESSAIS/amorce-essai.sh"
 FAUX_GH="$TESTS/faux-gh/gh"
+FAUX_GH_PUBLIER="$TESTS/faux-gh-publier/gh"
 PORT=18765
 PORT_PROXY=18766
 PORT_FERME=18799
@@ -39,7 +40,8 @@ JETON_SANS_ACCES="jeton_essai_sans_acces_0003"
 CLE_REF="${LUTIN_CLE_REFERENCE:-$RACINE/../le-lutin-bleu/app/lutin_bleu/seed/release-signing-key.pub}"
 INSTALLATEUR_REF="${LUTIN_INSTALLATEUR_REFERENCE:-$RACINE/../le-lutin-bleu/installer-le-lutin-bleu.sh}"
 TAG="V09.999"
-FICHIERS_SHELL=("$AMORCE" "$RACINE/scripts/publier.sh" "$TESTS/lancer-tests.sh" "$FAUX_GH" "$TESTS/installateur-factice.sh")
+FICHIERS_SHELL=("$AMORCE" "$RACINE/scripts/publier.sh" "$TESTS/lancer-tests.sh" "$FAUX_GH" "$FAUX_GH_PUBLIER"
+  "$TESTS/installateur-factice.sh")
 
 # les descripteurs 3 à 9 hérités de qui lance les tests faussent le contrôle des descripteurs transmis à l'installateur
 exec 3<&- 4<&- 5<&- 6<&- 7<&- 8<&- 9<&-
@@ -271,11 +273,11 @@ echo "Tests de l'amorce (bash $(/bin/bash -c 'echo $BASH_VERSION')), faux GitHub
 
 detail=""
 /opt/homebrew/bin/shellcheck -s bash -x "${FICHIERS_SHELL[@]}" > "$SORTIES/T01-shellcheck.txt" 2>&1 || detail="voir sorties/T01-shellcheck.txt"
-bilan T01 "shellcheck (5 scripts)" "aucun avertissement" "$detail"
+bilan T01 "shellcheck (${#FICHIERS_SHELL[@]} scripts)" "aucun avertissement" "$detail"
 
 detail=""
 for f in "${FICHIERS_SHELL[@]}"; do /bin/bash -n "$f" 2>>"$SORTIES/T02-bash-n.txt" || detail="$detail $(basename "$f")"; done
-bilan T02 "bash 3.2 -n (5 scripts)" "syntaxe valide" "$detail"
+bilan T02 "bash 3.2 -n (${#FICHIERS_SHELL[@]} scripts)" "syntaxe valide" "$detail"
 
 # bash 3.2 lit une variable suivie d'un caractère non ASCII (TAG suivi de « … ») comme une variable « TAG\xe2 » : elle
 # s'écrit entre accolades (shellcheck ne le voit pas)
@@ -604,6 +606,64 @@ fi
 fuites="$(grep -rlE -- "$JETON_VALIDE|$JETON_GH|$JETON_SANS_ACCES" "$SORTIES" "$TEMOINS" "$JOURNAL_REQ" "$JOURNAL_PROXY" \
   "$JOURNAL_GH" "$TRAVAIL_AMORCE" "$ESSAIS/faux-github.out" "$ESSAIS/faux-proxy.out" 2>/dev/null | tr '\n' ' ')"
 bilan T54 "jetons absents des sorties et journaux" "aucune occurrence" "${fuites:+trouvés dans $fuites}"
+
+# --- publication -----------------------------------------------------------------------------------------------------
+
+# T55 : scripts/publier.sh sans réponse à sa confirmation (ni terminal, ni entrée standard) : message clair, rien de
+# publié. Il est joué sur une copie de ce dépôt sous tests/.essais/publier : ses tests y sont remplacés par un témoin qui
+# consigne T05 et T06 réussis, origin nomme le dépôt public mais pousse vers un dépôt local, et le faux gh ne connaît que
+# les lectures d'avant la confirmation. git y lit un HOME vide, sans la configuration du système.
+PUB="$ESSAIS/publier"
+PUB_DEPOT="$PUB/depot"
+PUB_DISTANT="$PUB/distant.git"
+PUB_JOURNAL="$PUB/journal-faux-gh.log"
+git_essai() {
+  env HOME="$PUB/home" GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=essai GIT_AUTHOR_EMAIL=essai@tests \
+    GIT_COMMITTER_NAME=essai GIT_COMMITTER_EMAIL=essai@tests /usr/bin/git "$@"
+}
+preparer_publier() {
+  mkdir -p "$PUB_DEPOT/scripts" "$PUB_DEPOT/tests" "$PUB/home"
+  cp "$AMORCE" "$RACINE/README.md" "$PUB_DEPOT/"
+  cp "$RACINE/scripts/publier.sh" "$PUB_DEPOT/scripts/"
+  printf '%s\n' '#!/bin/bash' 'mkdir -p tests/.essais' \
+    "printf '| T05 | - | - | réussi |\\n| T06 | - | - | réussi |\\n' > tests/.essais/resultats.md" > "$PUB_DEPOT/tests/lancer-tests.sh"
+  printf '%s\n' 'tests/.essais/' '.build/' > "$PUB_DEPOT/.gitignore"
+  git_essai init -q --bare "$PUB_DISTANT"
+  git_essai init -q -b main "$PUB_DEPOT"
+  git_essai -C "$PUB_DEPOT" add -A
+  git_essai -C "$PUB_DEPOT" commit -q --no-gpg-sign -m "copie d'essai"
+  git_essai -C "$PUB_DEPOT" remote add origin "https://github.com/tarnaub/le-lutin-bleu-installer.git"
+  git_essai -C "$PUB_DEPOT" remote set-url --push origin "$PUB_DISTANT"
+}
+jouer_publier() {  # jouer_publier NOM ENTREE : sortie dans $SORTIES/NOM.txt, code dans STATUT
+  : > "$PUB_JOURNAL"
+  STATUT=0
+  printf '%b' "$2" | env -i HOME="$PUB/home" GIT_CONFIG_NOSYSTEM=1 TMPDIR="${TMPDIR:-}" FAUX_GH_JOURNAL="$PUB_JOURNAL" \
+      PATH="$TESTS/faux-gh-publier:/usr/bin:/bin:/usr/sbin:/sbin" \
+      /bin/bash "$PUB_DEPOT/scripts/publier.sh" --prive --cle-reference "$CLES/cle-essai.pub" > "$SORTIES/$1.txt" 2>&1 \
+    || STATUT=$?
+}
+verifier_publier() {  # verifier_publier NUM NOM ENTREE MOTIF ATTENDU
+  local detail=""
+  jouer_publier "$2" "$3"
+  [ "$STATUT" -ne 0 ] || detail="code 0"
+  grep -q -- "$4" "$SORTIES/$2.txt" || detail="$detail message attendu absent"
+  grep -q "^api repos/tarnaub/le-lutin-bleu-installer/releases?per_page=100 " "$PUB_JOURNAL" \
+    || detail="$detail confirmation non atteinte"
+  if grep -q "^INTERDIT" "$PUB_JOURNAL"; then detail="$detail $(grep '^INTERDIT' "$PUB_JOURNAL" | head -n 1)"; fi
+  [ -z "$(git_essai -C "$PUB_DISTANT" for-each-ref)" ] || detail="$detail poussé"
+  [ -z "$(git_essai -C "$PUB_DEPOT" tag)" ] || detail="$detail étiquette posée"
+  bilan "$1" "$2" "$5" "$detail"
+}
+preparer_publier > "$SORTIES/publier-preparation.txt" 2>&1
+if [ ! -x "$FAUX_GH_PUBLIER" ] \
+    || [ "$(git_essai -C "$PUB_DEPOT" remote get-url --push origin 2>/dev/null)" != "$PUB_DISTANT" ]; then
+  consigner T55 "publier.sh : confirmation sans réponse" "message clair, rien de publié" ECHEC \
+    "(copie d'essai non préparée : voir sorties/publier-preparation.txt)"
+else
+  verifier_publier T55 publier-sans-reponse "" "confirmation impossible : aucune réponse" "message clair, rien de publié"
+  verifier_publier T55b publier-reponse-non "n\n" "abandon demandé" "« abandon demandé », rien de publié"
+fi
 
 {
   echo ""

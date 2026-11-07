@@ -1,0 +1,18 @@
+#!/bin/bash
+# Faux gh des tests de scripts/publier.sh : répond aux seules lectures que publier.sh fait avant sa confirmation, pour
+# un dépôt privé aux releases immuables, sans release ni brouillon de l'étiquette. Toute autre commande (créer, modifier
+# ou télécharger une release…) est notée « INTERDIT » et échoue : rien ne doit partir avant la confirmation.
+set -u
+: "${FAUX_GH_JOURNAL:?}"
+DEPOT="repos/tarnaub/le-lutin-bleu-installer"
+printf '%s\n' "$*" >> "$FAUX_GH_JOURNAL"
+case "$*" in
+  "auth status --hostname github.com") ;;
+  "api $DEPOT --jq .visibility") echo private ;;
+  "api $DEPOT/immutable-releases --jq .enabled") echo true ;;
+  "api $DEPOT/releases/tags/"*" --jq .id") echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+  "api $DEPOT/releases?per_page=100 --jq "*) ;;
+  *)
+    printf 'INTERDIT %s\n' "$*" >> "$FAUX_GH_JOURNAL"
+    exit 3 ;;
+esac
