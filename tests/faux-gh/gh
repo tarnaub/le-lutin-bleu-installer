@@ -1,0 +1,55 @@
+#!/bin/bash
+# Faux gh des tests de l'amorce : imite les seules commandes que l'amorce emploie, contre le faux GitHub local.
+#   gh auth status --hostname github.com   0 si « connecté » (fichier $FAUX_GH_ETAT/connecte), 1 sinon
+#   gh auth login …                        devient « connecté » si FAUX_GH_CONNEXION=ok, échoue sinon
+#   gh api -H "Accept: …" CHEMIN           relaie vers $FAUX_GH_API avec le jeton du faux gh ; en cas de refus, écrit
+#                                          « gh: Not Found (HTTP 404) » comme le vrai gh
+# Toute autre commande (dont « gh auth token ») est notée « INTERDIT » et échoue. Le journal note les arguments, sauf
+# ceux d'« api » au-delà du chemin, et jamais de jeton.
+set -u
+: "${FAUX_GH_ETAT:?}" "${FAUX_GH_API:?}" "${FAUX_GH_JOURNAL:?}"
+case "$FAUX_GH_API" in http://127.0.0.1:[0-9]*) ;; *) echo "faux gh : adresse refusée" >&2; exit 2 ;; esac
+noter() { printf '%s\n' "$*" >> "$FAUX_GH_JOURNAL"; }
+
+case "${1:-} ${2:-}" in
+  "auth status")
+    noter "auth status ${*:3}"
+    [ -f "$FAUX_GH_ETAT/connecte" ] ;;
+  "auth login")
+    noter "auth login ${*:3}"
+    echo "! Code à usage unique (faux gh) : ESSA-1000"
+    if [ "${FAUX_GH_CONNEXION:-echec}" = ok ]; then
+      touch "$FAUX_GH_ETAT/connecte"
+      echo "✓ Connecté (faux gh)"
+    else
+      echo "faux gh : connexion abandonnée" >&2
+      exit 1
+    fi ;;
+  "api -H")
+    accept="$3" chemin="${4:-}"
+    noter "api $chemin"
+    [ -f "$FAUX_GH_ETAT/connecte" ] || { echo "faux gh : non connecté" >&2; exit 4; }
+    corps="$FAUX_GH_ETAT/corps.$$"
+    code="$(printf 'header = "Authorization: token %s"\n' "${FAUX_GH_JETON:-}" \
+      | /usr/bin/curl -sS -L -K - -H "$accept" -o "$corps" -w '%{http_code}' "$FAUX_GH_API/$chemin")" || {
+        rm -f "$corps"
+        echo "error connecting to api.github.com (faux gh)" >&2
+        exit 1
+      }
+    if [ "$code" = 200 ]; then
+      cat "$corps"
+      rm -f "$corps"
+      exit 0
+    fi
+    rm -f "$corps"
+    case "$code" in
+      401) echo "gh: Bad credentials (HTTP 401)" >&2 ;;
+      403) echo "gh: API rate limit exceeded (HTTP 403)" >&2 ;;
+      404) echo "gh: Not Found (HTTP 404)" >&2 ;;
+      *) echo "gh: erreur (HTTP $code)" >&2 ;;
+    esac
+    exit 1 ;;
+  *)
+    noter "INTERDIT $*"
+    exit 3 ;;
+esac

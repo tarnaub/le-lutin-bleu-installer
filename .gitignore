@@ -1,0 +1,7 @@
+# dossiers de travail des tests et de scripts/publier.sh
+tests/.essais/
+.build/
+.DS_Store
+# liste locale des noms à ne jamais publier, lue par le test T05 : jamais commitée
+.termes-internes
+__pycache__/
