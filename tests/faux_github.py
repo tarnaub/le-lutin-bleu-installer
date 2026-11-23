@@ -1,8 +1,10 @@
 #!/usr/bin/python3
 """Faux GitHub des tests de l'amorce : écoute sur 127.0.0.1 seulement, ne joint jamais le vrai service.
 
-- GET /repos/tarnaub/le-lutin-bleu/releases/latest : 404 sans authentification ou avec un jeton sans accès (comme
-  GitHub pour un dépôt privé), 401 avec un jeton inconnu, la release en JSON avec un jeton valide ; scénario « limite » :
+- GET /repos/tarnaub/le-lutin-bleu et /repos/tarnaub/le-lutin-bleu-installer : les deux dépôts que la clé
+  d'installation doit ouvrir ; une clé « un seul dépôt » n'ouvre que le premier.
+- GET /repos/tarnaub/le-lutin-bleu/releases/latest : 404 sans authentification ou avec une clé sans accès (comme
+  GitHub pour un dépôt privé), 401 avec une clé inconnue, la release en JSON avec une clé valide ; scénario « limite » :
   403 et x-ratelimit-remaining: 0, comme GitHub quand le quota est épuisé.
 - GET /repos/tarnaub/le-lutin-bleu/releases/assets/<n> : redirection 302 vers http://localhost:<port>/telechargement/<n>,
   un autre nom d'hôte, comme le stockage de GitHub ; le journal note si l'en-tête Authorization y a été transmis.
@@ -25,8 +27,9 @@ from urllib.parse import urlsplit
 
 DEPOT = "tarnaub/le-lutin-bleu"
 DEPOT_PUBLIC = "tarnaub/le-lutin-bleu-installer"
-JETONS_VALIDES = {"jeton_essai_amorce_valide_0001", "jeton_essai_faux_gh_0002"}  # faux jetons des tests
-JETONS_SANS_ACCES = {"jeton_essai_sans_acces_0003"}
+JETONS_VALIDES = {"github_pat_essai_amorce_valide_0001"}  # clés factices des tests
+JETONS_SANS_ACCES = {"github_pat_essai_sans_acces_0003"}
+JETONS_UN_DEPOT = {"github_pat_essai_un_seul_depot_0004"}  # ouvre tarnaub/le-lutin-bleu, pas l'autre
 FICHIERS = ["Le-Lutin-Bleu.zip", "installer-le-lutin-bleu.sh", "release-manifest.txt", "release-manifest.txt.sig"]
 
 
@@ -104,9 +107,15 @@ class Faux(BaseHTTPRequestHandler):
         if jeton is None or jeton in JETONS_SANS_ACCES:
             self.noter(404, "(dépôt privé : visiteur anonyme ou compte sans accès)")
             return self.repondre(404, b'{"message": "Not Found"}')
-        if jeton not in JETONS_VALIDES:
+        if jeton not in JETONS_VALIDES | JETONS_UN_DEPOT:
             self.noter(401, "(jeton refusé)")
             return self.repondre(401, b'{"message": "Bad credentials"}')
+        if chemin == f"/repos/{DEPOT_PUBLIC}" and jeton in JETONS_UN_DEPOT:
+            self.noter(404, "(clé sans accès à ce dépôt)")
+            return self.repondre(404, b'{"message": "Not Found"}')
+        if chemin in (f"/repos/{DEPOT}", f"/repos/{DEPOT_PUBLIC}"):
+            self.noter(200, "(dépôt)")
+            return self.repondre(200, json.dumps({"full_name": chemin[len("/repos/"):]}).encode("utf-8"))
         if chemin == f"/repos/{DEPOT}/releases/latest":
             self.noter(200, "(release)")
             return self.repondre(200, json.dumps(self.release()).encode("utf-8"))

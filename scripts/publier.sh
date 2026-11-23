@@ -11,7 +11,7 @@
 #   scripts/publier.sh [--essai] [--cle-reference CHEMIN] [--immuables-verifiees] [--prive]
 #
 # --prive : publie dans le dépôt encore privé (l'auteur le rendra public lui-même). L'amorce n'est alors pas
-# téléchargeable sans authentification : la vérification finale passe par gh, et le message aux personnes invitées attend
+# téléchargeable sans authentification : la vérification finale passe par gh, et le message aux personnes qui installent attend
 # que le dépôt soit public. Sans --prive, un dépôt privé est refusé.
 #
 # Dans l'ordre :
@@ -24,7 +24,7 @@
 #   - pousse main et l'étiquette vX.Y.Z, crée la release en brouillon avec l'amorce, compare l'empreinte que GitHub
 #     publie, puis publie la release (elle devient alors immuable) ;
 #   - retélécharge l'amorce sans authentification par ses deux adresses (figée et « latest ») et compare l'empreinte ;
-#   - affiche le message à envoyer hors de GitHub aux personnes invitées, avec l'empreinte.
+#   - affiche le message à envoyer hors de GitHub aux personnes qui installent, avec l'empreinte.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 DEPOT_PUBLIC="tarnaub/le-lutin-bleu-installer"
@@ -196,7 +196,7 @@ EOF
 if [[ "$visibilite" != public ]]; then
   cat <<EOF
 
-Le dépôt est $visibilite : ni la commande ci-dessous ni le message aux personnes invitées ne servent avant qu'il soit public.
+Le dépôt est $visibilite : ni la commande ci-dessous ni le message aux personnes qui installent ne servent avant qu'il soit public.
 Le jour où il l'est, vérifier depuis un dossier vierge :
   curl -fsSLo $AMORCE $fixe && shasum -a 256 $AMORCE
 L'empreinte doit être $empreinte.
@@ -204,7 +204,7 @@ EOF
 fi
 cat <<EOF
 
-Message à envoyer hors de GitHub aux personnes invitées (courriel ou autre canal sûr) :
+Message à envoyer hors de GitHub aux personnes qui installent (courriel ou autre canal sûr) :
 ----
 Pour installer le Lutin Bleu, dans Terminal :
 
@@ -215,6 +215,9 @@ Pour installer le Lutin Bleu, dans Terminal :
 L'empreinte affichée par la deuxième ligne doit être exactement :
   $empreinte
 Sinon, ne lancez pas la troisième ligne et prévenez-moi.
+
+L'amorce demande la clé d'installation, que je vous transmets à part : aucun compte GitHub n'est nécessaire.
 ----
-Reportez aussi l'empreinte dans le README du dépôt privé (section « Installer en une commande »).
+La clé d'installation se transmet par un autre message que celui-ci, jamais dans un ticket ni sur GitHub.
+Reportez aussi l'empreinte dans le README du dépôt privé (rubrique « Installer »).
 EOF

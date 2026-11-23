@@ -2,6 +2,7 @@
 tests/.essais/
 .build/
 .DS_Store
-# liste locale des noms à ne jamais publier, lue par le test T05 : jamais commitée
+# liste locale des noms à ne jamais publier, lue par le test T05 : jamais commitée, ni aucune copie, à aucun niveau
 .termes-internes
+*termes-internes*
 __pycache__/
